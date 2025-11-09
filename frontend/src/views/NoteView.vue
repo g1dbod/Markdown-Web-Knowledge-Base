@@ -27,7 +27,9 @@ import { ref, watch, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 
-const API_URL = 'http://localhost:3000/api';
+import { config } from '../config.js';
+const API_URL = config.API_URL;
+
 
 const route = useRoute();
 const router = useRouter();

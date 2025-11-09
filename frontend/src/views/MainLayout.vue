@@ -33,7 +33,9 @@ import FileTree from '../components/FileTree.vue';
 import SearchBar from '../components/SearchBar.vue';
 import ThemeSelector from '../components/ThemeSelector.vue';
 
-const API_URL = 'http://localhost:3000/api';
+import { config } from '../config.js';
+const API_URL = config.API_URL;
+
 const route = useRoute();
 
 const treeData = ref([]);

@@ -3,36 +3,35 @@ import cors from 'cors';
 import fs from 'fs/promises';
 import path from 'path';
 import { marked } from 'marked';
+import config from './config.js';
 
 const app = express();
-const PORT = 3000;
+const { PORT, KNOWLEDGE_BASE_PATH, CORS_OPTIONS, SEARCH, IGNORE_PATTERNS, SUPPORTED_EXTENSIONS, LOGGING } = config;
 
-// Укажите путь к вашей папке с базой знаний
-const KNOWLEDGE_BASE_PATH = path.resolve('C:/Users/g1dbod/Yandex.Disk/Nexus');
-
-app.use(cors());
+app.use(cors(CORS_OPTIONS));
 app.use(express.json());
+
+// Логирование
+function log(message, level = 'info') {
+  if (LOGGING.ENABLED) {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] [${level.toUpperCase()}] ${message}`);
+  }
+}
 
 // Функция для нормализации путей (всегда используем прямые слэши)
 function normalizePath(filePath) {
   return filePath.replace(/\\/g, '/');
 }
 
-// Список имён для игнорирования (можно добавить свои)
-const IGNORE_LIST = ['.git', '.obsidian', '.trash', 'node_modules', '.DS_Store'];
-
+// Функция для проверки, должен ли файл/папка быть проигнорирован
 function shouldIgnore(name) {
-  // Скрытые файлы (начинающиеся с точки)
-  if (name.startsWith('.')) {
-    return true;
-  }
-  
-  // Файлы из списка игнорирования
-  if (IGNORE_LIST.includes(name)) {
-    return true;
-  }
-  
-  return false;
+  return IGNORE_PATTERNS.some(pattern => {
+    if (pattern instanceof RegExp) {
+      return pattern.test(name);
+    }
+    return name === pattern;
+  });
 }
 
 // Рекурсивное сканирование директории
@@ -43,9 +42,8 @@ async function scanDirectory(dirPath, relativePath = '') {
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
     
     for (const entry of entries) {
-      // Пропускаем скрытые файлы и папки
       if (shouldIgnore(entry.name)) {
-        console.log(`Пропущен скрытый элемент: ${entry.name}`);
+        log(`Пропущен игнорируемый элемент: ${entry.name}`, 'debug');
         continue;
       }
       
@@ -54,7 +52,6 @@ async function scanDirectory(dirPath, relativePath = '') {
       
       if (entry.isDirectory()) {
         const children = await scanDirectory(fullPath, relPath);
-        // Добавляем папку только если в ней есть видимые элементы
         if (children.length > 0) {
           items.push({
             name: entry.name,
@@ -63,7 +60,7 @@ async function scanDirectory(dirPath, relativePath = '') {
             children
           });
         }
-      } else if (entry.name.endsWith('.md')) {
+      } else if (SUPPORTED_EXTENSIONS.some(ext => entry.name.endsWith(ext))) {
         items.push({
           name: entry.name,
           path: relPath,
@@ -72,11 +69,10 @@ async function scanDirectory(dirPath, relativePath = '') {
       }
     }
   } catch (error) {
-    console.error(`Ошибка чтения директории ${dirPath}:`, error);
+    log(`Ошибка чтения директории ${dirPath}: ${error.message}`, 'error');
   }
   
   return items.sort((a, b) => {
-    // Папки сначала, затем файлы
     if (a.type !== b.type) {
       return a.type === 'folder' ? -1 : 1;
     }
@@ -90,34 +86,28 @@ async function searchFiles(dirPath, query, relativePath = '', results = []) {
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
     
     for (const entry of entries) {
-      // Пропускаем скрытые файлы и папки
-      if (shouldIgnore(entry.name)) {
-        continue;
-      }
+      if (shouldIgnore(entry.name)) continue;
       
       const fullPath = path.join(dirPath, entry.name);
       const relPath = normalizePath(path.join(relativePath, entry.name));
       
       if (entry.isDirectory()) {
         await searchFiles(fullPath, query, relPath, results);
-      } else if (entry.name.endsWith('.md')) {
+      } else if (SUPPORTED_EXTENSIONS.some(ext => entry.name.endsWith(ext))) {
         try {
           const content = await fs.readFile(fullPath, 'utf-8');
           const lowerContent = content.toLowerCase();
           const lowerQuery = query.toLowerCase();
           
-          // Проверяем, содержит ли файл поисковый запрос
           if (lowerContent.includes(lowerQuery) || entry.name.toLowerCase().includes(lowerQuery)) {
-            // Находим контекст вокруг найденного текста
             const matches = [];
             let index = lowerContent.indexOf(lowerQuery);
             
-            while (index !== -1 && matches.length < 3) {
-              const start = Math.max(0, index - 100);
-              const end = Math.min(content.length, index + query.length + 100);
+            while (index !== -1 && matches.length < SEARCH.MAX_MATCHES_PER_FILE) {
+              const start = Math.max(0, index - SEARCH.CONTEXT_LENGTH);
+              const end = Math.min(content.length, index + query.length + SEARCH.CONTEXT_LENGTH);
               let snippet = content.substring(start, end);
               
-              // Добавляем многоточие если текст обрезан
               if (start > 0) snippet = '...' + snippet;
               if (end < content.length) snippet = snippet + '...';
               
@@ -135,14 +125,18 @@ async function searchFiles(dirPath, query, relativePath = '', results = []) {
               matches,
               matchCount: (content.match(new RegExp(query, 'gi')) || []).length
             });
+            
+            if (results.length >= SEARCH.MAX_RESULTS) {
+              return results;
+            }
           }
         } catch (error) {
-          console.error(`Ошибка чтения файла ${fullPath}:`, error);
+          log(`Ошибка чтения файла ${fullPath}: ${error.message}`, 'error');
         }
       }
     }
   } catch (error) {
-    console.error(`Ошибка поиска в директории ${dirPath}:`, error);
+    log(`Ошибка поиска в директории ${dirPath}: ${error.message}`, 'error');
   }
   
   return results;
@@ -151,10 +145,11 @@ async function searchFiles(dirPath, query, relativePath = '', results = []) {
 // API для получения структуры файлов
 app.get('/api/tree', async (req, res) => {
   try {
+    log('Запрос структуры дерева файлов');
     const tree = await scanDirectory(KNOWLEDGE_BASE_PATH);
     res.json(tree);
   } catch (error) {
-    console.error('Ошибка получения дерева:', error);
+    log(`Ошибка получения дерева: ${error.message}`, 'error');
     res.status(500).json({ error: 'Ошибка получения структуры файлов' });
   }
 });
@@ -164,24 +159,24 @@ app.get('/api/search', async (req, res) => {
   try {
     const query = req.query.q;
     
-    if (!query || query.trim().length < 2) {
-      return res.status(400).json({ error: 'Поисковый запрос должен содержать минимум 2 символа' });
+    if (!query || query.trim().length < SEARCH.MIN_QUERY_LENGTH) {
+      return res.status(400).json({ 
+        error: `Поисковый запрос должен содержать минимум ${SEARCH.MIN_QUERY_LENGTH} символа` 
+      });
     }
     
-    console.log('Поиск:', query);
-    
+    log(`Поиск: "${query}"`);
     const results = await searchFiles(KNOWLEDGE_BASE_PATH, query.trim());
-    
-    // Сортируем результаты по количеству совпадений
     results.sort((a, b) => b.matchCount - a.matchCount);
     
+    log(`Найдено результатов: ${results.length}`);
     res.json({
       query: query.trim(),
       count: results.length,
       results
     });
   } catch (error) {
-    console.error('Ошибка поиска:', error);
+    log(`Ошибка поиска: ${error.message}`, 'error');
     res.status(500).json({ error: 'Ошибка выполнения поиска' });
   }
 });
@@ -189,50 +184,42 @@ app.get('/api/search', async (req, res) => {
 // API для получения содержимого файла
 app.get('/api/file', async (req, res) => {
   try {
-    // Декодируем путь из URL
     let filePath = req.query.path;
     
     if (!filePath) {
       return res.status(400).json({ error: 'Не указан путь к файлу' });
     }
     
-    // Декодируем URI компоненты (обработка пробелов и спецсимволов)
     filePath = decodeURIComponent(filePath);
     
-    // Проверяем, что путь не содержит скрытые файлы/папки
+    // Проверка безопасности
     const pathSegments = filePath.split('/');
     for (const segment of pathSegments) {
       if (shouldIgnore(segment)) {
-        console.error('Попытка доступа к скрытому файлу:', filePath);
-        return res.status(403).json({ error: 'Доступ к скрытым файлам запрещён' });
+        log(`Попытка доступа к игнорируемому файлу: ${filePath}`, 'warn');
+        return res.status(403).json({ error: 'Доступ к этому файлу запрещён' });
       }
     }
     
-    // Нормализуем слэши для Windows
     filePath = filePath.replace(/\//g, path.sep);
-    
-    console.log('Запрошен файл:', filePath);
+    log(`Запрос файла: ${filePath}`);
     
     const fullPath = path.join(KNOWLEDGE_BASE_PATH, filePath);
-    
-    // Проверка безопасности: файл должен находиться внутри базы знаний
     const normalizedPath = path.resolve(fullPath);
     const normalizedBase = path.resolve(KNOWLEDGE_BASE_PATH);
     
     if (!normalizedPath.startsWith(normalizedBase)) {
-      console.error('Попытка доступа за пределы базы знаний:', normalizedPath);
+      log(`Попытка доступа за пределы базы знаний: ${normalizedPath}`, 'warn');
       return res.status(403).json({ error: 'Доступ запрещён' });
     }
     
-    // Проверяем существование файла
     try {
       await fs.access(fullPath);
     } catch {
-      console.error('Файл не найден:', fullPath);
+      log(`Файл не найден: ${fullPath}`, 'warn');
       return res.status(404).json({ 
         error: 'Файл не найден',
-        path: filePath,
-        fullPath: fullPath
+        path: filePath
       });
     }
     
@@ -245,7 +232,7 @@ app.get('/api/file', async (req, res) => {
       path: normalizePath(filePath)
     });
   } catch (error) {
-    console.error('Ошибка при обработке файла:', error);
+    log(`Ошибка при обработке файла: ${error.message}`, 'error');
     res.status(500).json({ 
       error: 'Ошибка чтения файла',
       details: error.message
@@ -253,7 +240,18 @@ app.get('/api/file', async (req, res) => {
   }
 });
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    knowledgeBasePath: KNOWLEDGE_BASE_PATH,
+    version: '1.0.0'
+  });
+});
+
 app.listen(PORT, () => {
-  console.log(`Сервер запущен на http://localhost:${PORT}`);
-  console.log(`База знаний: ${KNOWLEDGE_BASE_PATH}`);
+  log(`=================================`);
+  log(`Сервер запущен на http://localhost:${PORT}`);
+  log(`База знаний: ${KNOWLEDGE_BASE_PATH}`);
+  log(`=================================`);
 });

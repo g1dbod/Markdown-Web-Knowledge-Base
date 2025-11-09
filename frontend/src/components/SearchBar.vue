@@ -64,7 +64,9 @@ import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
 
-const API_URL = 'http://localhost:3000/api';
+import { config } from '../config.js';
+const API_URL = config.API_URL;
+
 const router = useRouter();
 
 const searchQuery = ref('');
