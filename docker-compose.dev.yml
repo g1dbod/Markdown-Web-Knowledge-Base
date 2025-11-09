@@ -1,44 +1,45 @@
 version: '3.8'
 
 services:
+  # Backend с hot reload
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
-    container_name: knowledge-base-backend-dev
-    restart: unless-stopped
+    container_name: kb-backend-dev
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=development
       - PORT=3000
-      - KNOWLEDGE_BASE_PATH=/app/knowledge-base
+      - KNOWLEDGE_BASE_PATH=/knowledge-base
     volumes:
       - ./backend:/app
       - /app/node_modules
-      - /path/to/your/notes:/app/knowledge-base:ro
+      - ./knowledge-base:/knowledge-base:ro
     networks:
-      - knowledge-base-network
+      - kb-network
     command: npm run dev
 
+  # Frontend с hot reload
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
-    container_name: knowledge-base-frontend-dev
-    restart: unless-stopped
+    container_name: kb-frontend-dev
     ports:
       - "5173:5173"
     environment:
-      - NODE_ENV=development
       - VITE_API_URL=http://localhost:3000/api
     volumes:
       - ./frontend:/app
       - /app/node_modules
     networks:
-      - knowledge-base-network
+      - kb-network
     command: npm run dev
+    depends_on:
+      - backend
 
 networks:
-  knowledge-base-network:
+  kb-network:
     driver: bridge

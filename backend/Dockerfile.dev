@@ -2,18 +2,16 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Установка nodemon для hot-reload
+# Устанавливаем nodemon глобально для hot reload
 RUN npm install -g nodemon
 
-# Копируем package.json
 COPY package*.json ./
-
-# Устанавливаем зависимости
 RUN npm install
 
-# Копируем исходный код
 COPY . .
+
+RUN mkdir -p /knowledge-base
 
 EXPOSE 3000
 
-CMD ["npm", "run", "dev"]
+CMD ["nodemon", "server.js"]
