@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  knowledge-base:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: knowledge-base-app
+    restart: always
+    expose:
+      - "3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - KNOWLEDGE_BASE_PATH=/app/knowledge-base
+      - CORS_ORIGIN=https://yourdomain.com
+    volumes:
+      - /path/to/your/notes:/app/knowledge-base:ro
+    networks:
+      - knowledge-base-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  nginx:
+    image: nginx:alpine
+    container_name: knowledge-base-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - knowledge-base
+    networks:
+      - knowledge-base-network
+
+networks:
+  knowledge-base-network:
+    driver: bridge

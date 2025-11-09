@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  knowledge-base:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: knowledge-base-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Основные настройки
+      - NODE_ENV=production
+      - PORT=3000
+      # Путь к базе знаний внутри контейнера
+      - KNOWLEDGE_BASE_PATH=/app/knowledge-base
+      # CORS настройки
+      - CORS_ORIGIN=*
+      # Логирование
+      - LOG_LEVEL=info
+    volumes:
+      # Монтируем вашу папку с заметками
+      # ВАЖНО: Замените /path/to/your/notes на реальный путь
+      - /path/to/your/notes:/app/knowledge-base:ro
+    networks:
+      - knowledge-base-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  knowledge-base-network:
+    driver: bridge

@@ -1,0 +1,41 @@
+# Dependencies
+node_modules
+npm-debug.log
+package-lock.json
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Build files
+dist
+build
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+README.md
+LICENSE
+
+# Docker files
+docker-compose*.yml
+Dockerfile*
+
+# Knowledge base (будет монтирован как volume)
+knowledge-base
+
+# Logs
+logs
+*.log

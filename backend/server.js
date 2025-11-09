@@ -8,6 +8,17 @@ import config from './config.js';
 const app = express();
 const { PORT, KNOWLEDGE_BASE_PATH, CORS_OPTIONS, SEARCH, IGNORE_PATTERNS, SUPPORTED_EXTENSIONS, LOGGING } = config;
 
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(path.dirname(new URL(import.meta.url).pathname), 'public')));
+  
+  // Все остальные маршруты отправляем на index.html
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api/')) {
+      res.sendFile(path.join(path.dirname(new URL(import.meta.url).pathname), 'public', 'index.html'));
+    }
+  });
+}
+
 app.use(cors(CORS_OPTIONS));
 app.use(express.json());
 

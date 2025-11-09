@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: knowledge-base-backend-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - KNOWLEDGE_BASE_PATH=/app/knowledge-base
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - /path/to/your/notes:/app/knowledge-base:ro
+    networks:
+      - knowledge-base-network
+    command: npm run dev
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: knowledge-base-frontend-dev
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:3000/api
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - knowledge-base-network
+    command: npm run dev
+
+networks:
+  knowledge-base-network:
+    driver: bridge
